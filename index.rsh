@@ -83,7 +83,13 @@ export const main = Reach.App(() => {
     .paySpec([depositToken])
     .api(
       UserAPI.deposit,
-      (amt, rn) => assume(isNone(depositors[this]) && isBeforeDeadline()),
+      (amt, rn) => {
+        assume(isNone(depositors[this]), "You cannot deposit more than once");
+        assume(
+          isBeforeDeadline(),
+          "You cannot deposit after the lottery has ended"
+        );
+      },
       (amt, rn) => [0, [amt, depositToken]],
       (amt, rn, returnF) => {
         require(isNone(depositors[this]) && isBeforeDeadline());
@@ -112,10 +118,14 @@ export const main = Reach.App(() => {
       UserAPI.withdraw,
       () => {
         const userDeposit = fromSome(depositors[this], nullDepositObj)[2];
+        assume(userDeposit > 0, "You have no balance to withdraw");
         assume(
-          userDeposit > 0 &&
-            balance(depositToken) >= userDeposit &&
-            !isBeforeDeadline()
+          !isBeforeDeadline(),
+          "You cannot withdraw before the lottery ends"
+        );
+        assume(
+          balance(depositToken) >= userDeposit,
+          "Contract does not have enough funds to dispense"
         );
       },
       () => [0, [0, depositToken]],
@@ -158,8 +168,14 @@ export const main = Reach.App(() => {
     })
     .api(
       UserAPI.finaliseRN,
-      (initRN, saltInitRN) =>
-        assume(this == PoolCreator && !rnFinalised && !isBeforeDeadline()),
+      (initRN, saltInitRN) => {
+        assume(this == PoolCreator, "You are not the lottery creator");
+        assume(
+          !isBeforeDeadline(),
+          "You cannot select winners before the lottery ends"
+        );
+        assume(!rnFinalised, "You have already selected winners");
+      },
       (initRN, saltInitRN) => [0, [0, depositToken]],
       (initRN, saltInitRN, returnF) => {
         require(this == PoolCreator && !rnFinalised && !isBeforeDeadline());
@@ -188,10 +204,16 @@ export const main = Reach.App(() => {
       () => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         assume(
-          !isBeforeDeadline() &&
-            balance(depositToken) >= vaultAmt &&
-            runningRN >= userDepositObj[0] &&
-            runningRN <= userDepositObj[1]
+          !isBeforeDeadline(),
+          "You cannot claim rewards before the lottery ends"
+        );
+        assume(
+          runningRN >= userDepositObj[0] && runningRN <= userDepositObj[1],
+          "You did not win the lottery"
+        );
+        assume(
+          balance(depositToken) >= vaultAmt,
+          "Contract does not have enough funds to dispense"
         );
       },
       () => [0, [0, depositToken]],
