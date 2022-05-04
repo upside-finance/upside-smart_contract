@@ -57,7 +57,7 @@ export const main = Reach.App(() => {
   const deadlineSecs = fromRight(relativeSecs(relativeDeadlineSecs), 0);
   UserView.deadlineSecs.set(deadlineSecs);
 
-  const isBeforeDeadline = () => baseWaitSecs() <= deadlineSecs;
+  const isBeforeDeadline = () => thisConsensusSecs() <= deadlineSecs;
 
   const depositors = new Map(Array(UInt, 3));
   const nullDepositObj = array(UInt, [0, 0, 0]);
