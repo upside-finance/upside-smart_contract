@@ -54,9 +54,8 @@ export const main = Reach.App(() => {
 
   PoolCreator.pay([0, [vaultAmt, depositToken]]);
 
-  const deadlineSecs = fromRight(relativeSecs(relativeDeadlineSecs), 0);
+  const deadlineSecs = thisConsensusSecs() + relativeDeadlineSecs;
   UserView.deadlineSecs.set(deadlineSecs);
-
   const isBeforeDeadline = () => thisConsensusSecs() <= deadlineSecs;
 
   const depositors = new Map(Array(UInt, 3));
