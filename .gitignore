@@ -1,5 +1,7 @@
-.reach
 .vscode
-build
-tls
-reach
+reach_sc/build
+reach_sc/tls
+reach_sc/reach
+node_backend/node_modules/
+node_backend/.env
+backend
