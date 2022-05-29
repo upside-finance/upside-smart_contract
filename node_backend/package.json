@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@reach-sh/stdlib": "^0.1.10-rc.5",
+    "@reach-sh/stdlib": "^0.1.10-rc.6",
     "dotenv": "^16.0.1"
   }
 }
