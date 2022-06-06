@@ -23,7 +23,7 @@ export const main = Reach.App(() => {
     totalDeposit: UInt,
     numDepositors: UInt,
     numDeposits: UInt,
-    runningProb: UInt,
+    currProbArrSize: UInt,
     requestReclaim: Bool,
   });
 
@@ -44,21 +44,21 @@ export const main = Reach.App(() => {
   const depositors = new Map(Array(UInt, 3));
   const nullDepositObj = array(UInt, [0, 0, 0]);
 
-  const [
-    totalDeposit,
-    numDepositors,
-    numDeposits,
-    runningProb,
-    requestReclaim,
-    rn,
-  ] = parallelReduce([0, 0, 0, 0, true, 0])
+  const state = parallelReduce({
+    totalDeposit: 0,
+    numDepositors: 0,
+    numDeposits: 0,
+    currProbArrSize: 0,
+    requestReclaim: true,
+    randomNum: 0,
+  })
     .invariant(true)
     .define(() => {
-      UserView.totalDeposit.set(totalDeposit);
-      UserView.numDepositors.set(numDepositors);
-      UserView.numDeposits.set(numDeposits);
-      UserView.runningProb.set(runningProb);
-      UserView.requestReclaim.set(requestReclaim);
+      UserView.totalDeposit.set(state.totalDeposit);
+      UserView.numDepositors.set(state.numDepositors);
+      UserView.numDeposits.set(state.numDeposits);
+      UserView.currProbArrSize.set(state.currProbArrSize);
+      UserView.requestReclaim.set(state.requestReclaim);
     })
     .while(true)
     .api(
@@ -72,18 +72,23 @@ export const main = Reach.App(() => {
         returnF(null);
 
         const userEndProb =
-          runningProb + amt * (deadlineSecs - thisConsensusSecs()) - 1;
-        depositors[this] = array(UInt, [runningProb, userEndProb, amt]);
+          state.currProbArrSize +
+          amt * (deadlineSecs - thisConsensusSecs()) -
+          1;
+        depositors[this] = array(UInt, [
+          state.currProbArrSize,
+          userEndProb,
+          amt,
+        ]);
         transfer(amt).to(PoolCreator);
 
-        return [
-          totalDeposit + amt,
-          numDepositors + 1,
-          numDeposits + 1,
-          userEndProb,
-          requestReclaim,
-          rn,
-        ];
+        return {
+          ...state,
+          totalDeposit: state.totalDeposit + amt,
+          numDepositors: state.numDepositors + 1,
+          numDeposits: state.numDeposits + 1,
+          currProbArrSize: userEndProb,
+        };
       }
     )
     .api(
@@ -91,6 +96,7 @@ export const main = Reach.App(() => {
       () => {
         const userDeposit = fromSome(depositors[this], nullDepositObj)[2];
         assume(userDeposit > 0, "You have no balance to withdraw");
+        assume(!state.requestReclaim, "Funds not reclaimed from DeFi protocol");
         assume(
           balance() >= userDeposit,
           "Contract does not have enough funds to dispense"
@@ -101,6 +107,7 @@ export const main = Reach.App(() => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         const userDeposit = userDepositObj[2];
         require(userDeposit > 0 &&
+          !state.requestReclaim &&
           balance() >= userDeposit &&
           !isBeforeDeadline());
         returnF(null);
@@ -112,72 +119,54 @@ export const main = Reach.App(() => {
         ]);
         transfer(userDeposit).to(this);
 
-        return [
-          totalDeposit,
-          numDepositors,
-          numDeposits,
-          runningProb,
-          requestReclaim,
-          rn,
-        ];
+        return state;
       }
     )
     .api(
       UserAPI.transferFunds,
       (supplied_rn, amt) => {
         assume(this == PoolCreator, "You are not the lottery creator");
-        assume(requestReclaim, "Funds already transferred");
+        assume(state.requestReclaim, "Funds already transferred");
       },
       (supplied_rn, amt) => amt,
       (supplied_rn, amt, returnF) => {
-        require(this == PoolCreator && requestReclaim && !isBeforeDeadline());
+        require(this == PoolCreator &&
+          state.requestReclaim &&
+          !isBeforeDeadline());
         returnF(null);
 
-        return [
-          totalDeposit,
-          numDepositors,
-          numDeposits,
-          runningProb,
-          false,
-          supplied_rn,
-        ];
+        return { ...state, requestReclaim: false, randomNum: supplied_rn };
       }
     )
     .api(
       UserAPI.claimReward,
       () => {
+        assume(!state.requestReclaim, "Winner not selected yet");
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         assume(
-          rn >= userDepositObj[0] && rn <= userDepositObj[1],
+          state.randomNum >= userDepositObj[0] &&
+            state.randomNum <= userDepositObj[1],
           "You did not win the lottery"
         );
         assume(
-          balance() >= totalDeposit,
+          balance() >= state.totalDeposit,
           "Contract does not have enough funds to dispense"
         );
-        assume(!requestReclaim, "Winner not selected yet");
       },
       () => 0,
       (returnF) => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
-        require(balance() >= totalDeposit &&
-          rn >= userDepositObj[0] &&
-          rn <= userDepositObj[1] &&
-          !requestReclaim &&
+        require(!state.requestReclaim &&
+          balance() >= state.totalDeposit &&
+          state.randomNum >= userDepositObj[0] &&
+          state.randomNum <= userDepositObj[1] &&
           !isBeforeDeadline());
 
-        transfer(balance() - totalDeposit).to(this);
+        transfer(balance() - state.totalDeposit).to(this);
 
         returnF(null);
 
-        return [
-          totalDeposit,
-          numDepositors,
-          numDeposits,
-          runningProb,
-          requestReclaim,
-          rn,
-        ];
+        return state;
       }
     );
 
