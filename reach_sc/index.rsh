@@ -7,47 +7,37 @@ export const main = Reach.App(() => {
   const PoolCreator = Participant("PoolCreator", {
     ...hasConsoleLogger,
     disconnect: Fun([], Null),
-    depositToken: Token,
-    vaultAmt: UInt,
     relativeDeadlineSecs: UInt,
   });
 
   const UserAPI = API("UserAPI", {
     deposit: Fun([UInt], Null),
     withdraw: Fun([], Null),
-    supplyRN: Fun([UInt], Null),
+    transferFunds: Fun([UInt, UInt], Null),
     claimReward: Fun([], Null),
   });
 
   const UserView = View("UserView", {
-    depositToken: Token,
-    vaultAmt: UInt,
     deploymentSecs: UInt,
     deadlineSecs: UInt,
     totalDeposit: UInt,
     numDepositors: UInt,
     numDeposits: UInt,
     runningProb: UInt,
-    requestingRN: Bool,
+    requestReclaim: Bool,
   });
 
   init();
 
   PoolCreator.only(() => {
-    const depositToken = declassify(interact.depositToken);
-    const vaultAmt = declassify(interact.vaultAmt);
     const relativeDeadlineSecs = declassify(interact.relativeDeadlineSecs);
   });
-  PoolCreator.publish(depositToken, vaultAmt, relativeDeadlineSecs);
-  UserView.depositToken.set(depositToken);
-  UserView.vaultAmt.set(vaultAmt);
+  PoolCreator.publish(relativeDeadlineSecs);
+  PoolCreator.interact.disconnect();
+
   UserView.deploymentSecs.set(thisConsensusSecs());
   const deadlineSecs = thisConsensusSecs() + relativeDeadlineSecs;
   UserView.deadlineSecs.set(deadlineSecs);
-  commit();
-
-  PoolCreator.pay([0, [vaultAmt, depositToken]]);
-  PoolCreator.interact.disconnect();
 
   const isBeforeDeadline = () => thisConsensusSecs() <= deadlineSecs;
 
@@ -59,7 +49,7 @@ export const main = Reach.App(() => {
     numDepositors,
     numDeposits,
     runningProb,
-    requestingRN,
+    requestReclaim,
     rn,
   ] = parallelReduce([0, 0, 0, 0, true, 0])
     .invariant(true)
@@ -68,16 +58,15 @@ export const main = Reach.App(() => {
       UserView.numDepositors.set(numDepositors);
       UserView.numDeposits.set(numDeposits);
       UserView.runningProb.set(runningProb);
-      UserView.requestingRN.set(requestingRN);
+      UserView.requestReclaim.set(requestReclaim);
     })
     .while(true)
-    .paySpec([depositToken])
     .api(
       UserAPI.deposit,
       (amt) => {
         assume(isNone(depositors[this]), "You cannot deposit more than once");
       },
-      (amt) => [0, [amt, depositToken]],
+      (amt) => amt,
       (amt, returnF) => {
         require(isNone(depositors[this]) && isBeforeDeadline());
         returnF(null);
@@ -85,13 +74,14 @@ export const main = Reach.App(() => {
         const userEndProb =
           runningProb + amt * (deadlineSecs - thisConsensusSecs()) - 1;
         depositors[this] = array(UInt, [runningProb, userEndProb, amt]);
+        transfer(amt).to(PoolCreator);
 
         return [
           totalDeposit + amt,
           numDepositors + 1,
           numDeposits + 1,
           userEndProb,
-          requestingRN,
+          requestReclaim,
           rn,
         ];
       }
@@ -102,16 +92,16 @@ export const main = Reach.App(() => {
         const userDeposit = fromSome(depositors[this], nullDepositObj)[2];
         assume(userDeposit > 0, "You have no balance to withdraw");
         assume(
-          balance(depositToken) >= userDeposit,
+          balance() >= userDeposit,
           "Contract does not have enough funds to dispense"
         );
       },
-      () => [0, [0, depositToken]],
+      () => 0,
       (returnF) => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         const userDeposit = userDepositObj[2];
         require(userDeposit > 0 &&
-          balance(depositToken) >= userDeposit &&
+          balance() >= userDeposit &&
           !isBeforeDeadline());
         returnF(null);
 
@@ -120,27 +110,27 @@ export const main = Reach.App(() => {
           userDepositObj[1],
           0,
         ]);
-        transfer(userDeposit, depositToken).to(this);
+        transfer(userDeposit).to(this);
 
         return [
           totalDeposit,
           numDepositors,
           numDeposits,
           runningProb,
-          requestingRN,
+          requestReclaim,
           rn,
         ];
       }
     )
     .api(
-      UserAPI.supplyRN,
-      (supplied_rn) => {
+      UserAPI.transferFunds,
+      (supplied_rn, amt) => {
         assume(this == PoolCreator, "You are not the lottery creator");
-        assume(requestingRN, "Random number already supplied");
+        assume(requestReclaim, "Funds already transferred");
       },
-      (supplied_rn) => [0, [0, depositToken]],
-      (supplied_rn, returnF) => {
-        require(this == PoolCreator && !isBeforeDeadline() && requestingRN);
+      (supplied_rn, amt) => amt,
+      (supplied_rn, amt, returnF) => {
+        require(this == PoolCreator && requestReclaim && !isBeforeDeadline());
         returnF(null);
 
         return [
@@ -162,21 +152,21 @@ export const main = Reach.App(() => {
           "You did not win the lottery"
         );
         assume(
-          balance(depositToken) >= vaultAmt,
+          balance() >= totalDeposit,
           "Contract does not have enough funds to dispense"
         );
-        assume(!requestingRN, "Winner not selected yet");
+        assume(!requestReclaim, "Winner not selected yet");
       },
-      () => [0, [0, depositToken]],
+      () => 0,
       (returnF) => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
-        require(!isBeforeDeadline() &&
-          balance(depositToken) >= vaultAmt &&
+        require(balance() >= totalDeposit &&
           rn >= userDepositObj[0] &&
           rn <= userDepositObj[1] &&
-          !requestingRN);
+          !requestReclaim &&
+          !isBeforeDeadline());
 
-        transfer(vaultAmt, depositToken).to(this);
+        transfer(balance() - totalDeposit).to(this);
 
         returnF(null);
 
@@ -185,7 +175,7 @@ export const main = Reach.App(() => {
           numDepositors,
           numDeposits,
           runningProb,
-          requestingRN,
+          requestReclaim,
           rn,
         ];
       }
