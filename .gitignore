@@ -4,7 +4,8 @@ reach_sc/tls
 reach_sc/reach
 reach_sc/.reach
 node_backend/node_modules/
-node_backend/.env
+.env
 node_backend/appID.txt
 node_backend/test.js
 backend
+python_script/__pycache__

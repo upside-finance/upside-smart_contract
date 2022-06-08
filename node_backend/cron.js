@@ -2,9 +2,17 @@ import { loadStdlib } from "@reach-sh/stdlib";
 import dotenv from "dotenv";
 import * as backend from "../reach_sc/build/index.main.mjs";
 import { promises as fs } from "fs";
+import { spawnSync } from "child_process";
+
+const onLiveChain = () => {
+  return process.env.network === "MainNet" || process.env.network === "TestNet";
+};
 
 const script = async () => {
   const reach = loadStdlib("ALGO");
+  if (onLiveChain()) {
+    reach.setProviderByName(process.env.network);
+  }
 
   const appID = await fs.readFile(process.env.appID_filename, {
     encoding: "utf8",
@@ -24,30 +32,61 @@ const script = async () => {
   console.log("Lottery deadline: " + deadlineSecs);
 
   if (networkSecs < deadlineSecs) {
-    const testAcc = await reach.newTestAccount(1000000);
-    const ctc_test = testAcc.contract(backend, appID);
+    const supplyAmt = (
+      await ctc.apis.UserAPI.clearSupplyAmtToDefi()
+    ).toNumber();
 
-    await testAcc.tokenAccept(237);
-    await reach.transfer(backendAcc, testAcc, 200, 237);
+    console.log("Amount to be supplied to Algofi = " + supplyAmt);
 
-    await ctc_test.apis.UserAPI.deposit(reach.bigNumberify(5));
-  } else {
-    const requestingRN = await ctc.unsafeViews.UserView.requestingRN();
-
-    if (requestingRN) {
-      const runningProb = (
-        await ctc.unsafeViews.UserView.runningProb()
-      ).toNumber();
-      console.log("Probability array size = " + runningProb);
-
-      const rn = reach.bigNumberify(
-        Math.floor(Math.random() * (runningProb + 1))
+    if (onLiveChain() && supplyAmt !== 0) {
+      const pythonSpawn = spawnSync(
+        `conda run -n UF_algofi python ../python_script/algofi_mint.py ${supplyAmt}`,
+        { shell: true }
       );
-      await ctc.apis.UserAPI.supplyRN(rn);
-      console.log("Supplying random number " + rn.toNumber());
+
+      if (pythonSpawn.stdout) {
+        console.log(pythonSpawn.stdout.toString());
+      }
+      if (pythonSpawn.stderr) {
+        console.log(pythonSpawn.stderr.toString());
+      }
+    }
+  } else {
+    const requestReclaim = await ctc.unsafeViews.UserView.requestReclaim();
+
+    if (requestReclaim) {
+      const oldBal = (await backendAcc.balanceOf()).toNumber();
+
+      if (onLiveChain()) {
+        const pythonSpawn = spawnSync(
+          `conda run -n UF_algofi python ../python_script/algofi_burn.py`,
+          { shell: true }
+        );
+
+        if (pythonSpawn.stdout) {
+          console.log(pythonSpawn.stdout.toString());
+        }
+        if (pythonSpawn.stderr) {
+          console.log(pythonSpawn.stderr.toString());
+        }
+      }
+
+      const newBal = (await backendAcc.balanceOf()).toNumber();
+      const reclaimedAmt = newBal - oldBal;
+
+      const currProbArrSize = (
+        await ctc.unsafeViews.UserView.currProbArrSize()
+      ).toNumber();
+      console.log("Probability array size = " + currProbArrSize);
+
+      const rn = Math.floor(Math.random() * (currProbArrSize + 1));
+
+      await ctc.apis.UserAPI.transferFunds(rn, reclaimedAmt);
+      console.log("Supplied random number = " + rn);
+      console.log(`Transferred ${reclaimedAmt} from Algofi to smart contract`);
     }
   }
 };
 
-dotenv.config();
+dotenv.config({ path: "../.env" });
 script();
