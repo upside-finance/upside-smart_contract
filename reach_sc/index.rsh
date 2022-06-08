@@ -15,6 +15,7 @@ export const main = Reach.App(() => {
     withdraw: Fun([], Null),
     transferFunds: Fun([UInt, UInt], Null),
     claimReward: Fun([], Null),
+    clearSupplyAmtToDefi: Fun([], UInt),
   });
 
   const UserView = View("UserView", {
@@ -25,6 +26,7 @@ export const main = Reach.App(() => {
     numDeposits: UInt,
     currProbArrSize: UInt,
     requestReclaim: Bool,
+    supplyAmtToDefi: UInt,
   });
 
   init();
@@ -51,6 +53,7 @@ export const main = Reach.App(() => {
     currProbArrSize: 0,
     requestReclaim: true,
     randomNum: 0,
+    supplyAmtToDefi: 0,
   })
     .invariant(true)
     .define(() => {
@@ -59,6 +62,7 @@ export const main = Reach.App(() => {
       UserView.numDeposits.set(state.numDeposits);
       UserView.currProbArrSize.set(state.currProbArrSize);
       UserView.requestReclaim.set(state.requestReclaim);
+      UserView.supplyAmtToDefi.set(state.supplyAmtToDefi);
     })
     .while(true)
     .api(
@@ -88,6 +92,7 @@ export const main = Reach.App(() => {
           numDepositors: state.numDepositors + 1,
           numDeposits: state.numDeposits + 1,
           currProbArrSize: userEndProb,
+          supplyAmtToDefi: state.supplyAmtToDefi + amt,
         };
       }
     )
@@ -168,7 +173,11 @@ export const main = Reach.App(() => {
 
         return state;
       }
-    );
+    )
+    .api(UserAPI.clearSupplyAmtToDefi, (returnF) => {
+      returnF(state.supplyAmtToDefi);
+      return { ...state, supplyAmtToDefi: 0 };
+    });
 
   commit();
   exit();
