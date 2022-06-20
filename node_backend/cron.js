@@ -63,7 +63,11 @@ const script = async () => {
         await ctc.unsafeViews.UserView.totalDeposit()
       ).toNumber();
 
-      if (onLiveChain()) {
+      const bASAbal = (
+        await backendAcc.balanceOf(process.env.bASAid)
+      ).toNumber();
+
+      if (onLiveChain() && bASAbal != 0) {
         const pythonSpawn = spawnSync(
           `conda run -n UF_algofi python ../python_script/algofi_burn.py`,
           { shell: true }
