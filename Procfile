@@ -1,0 +1,1 @@
+worker: cd ./node_backend && npm i && node cron.js
