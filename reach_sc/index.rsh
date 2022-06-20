@@ -16,17 +16,20 @@ export const main = Reach.App(() => {
     transferFunds: Fun([UInt, UInt], Null),
     claimReward: Fun([], Null),
     clearSupplyAmtToDefi: Fun([], UInt),
+    setBankASAbal: Fun([UInt], Null),
   });
 
   const UserView = View("UserView", {
     deploymentSecs: UInt,
     deadlineSecs: UInt,
     totalDeposit: UInt,
+    totalWithdrawal: UInt,
     numDepositors: UInt,
     numDeposits: UInt,
     currProbArrSize: UInt,
     requestReclaim: Bool,
     supplyAmtToDefi: UInt,
+    maxBankASAbal: UInt,
   });
 
   init();
@@ -48,21 +51,25 @@ export const main = Reach.App(() => {
 
   const state = parallelReduce({
     totalDeposit: 0,
+    totalWithdrawal: 0,
     numDepositors: 0,
     numDeposits: 0,
     currProbArrSize: 0,
     requestReclaim: true,
     randomNum: 0,
     supplyAmtToDefi: 0,
+    maxBankASAbal: 0,
   })
     .invariant(true)
     .define(() => {
       UserView.totalDeposit.set(state.totalDeposit);
+      UserView.totalWithdrawal.set(state.totalWithdrawal);
       UserView.numDepositors.set(state.numDepositors);
       UserView.numDeposits.set(state.numDeposits);
       UserView.currProbArrSize.set(state.currProbArrSize);
       UserView.requestReclaim.set(state.requestReclaim);
       UserView.supplyAmtToDefi.set(state.supplyAmtToDefi);
+      UserView.maxBankASAbal.set(state.maxBankASAbal);
     })
     .while(true)
     .api(
@@ -124,7 +131,10 @@ export const main = Reach.App(() => {
         ]);
         transfer(userDeposit).to(this);
 
-        return state;
+        return {
+          ...state,
+          totalWithdrawal: state.totalWithdrawal + userDeposit,
+        };
       }
     )
     .api(
@@ -154,7 +164,7 @@ export const main = Reach.App(() => {
           "You did not win the lottery"
         );
         assume(
-          balance() >= state.totalDeposit,
+          balance() > state.totalDeposit - state.totalWithdrawal,
           "Contract does not have enough funds to dispense"
         );
       },
@@ -162,22 +172,41 @@ export const main = Reach.App(() => {
       (returnF) => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         require(!state.requestReclaim &&
-          balance() >= state.totalDeposit &&
+          balance() > state.totalDeposit - state.totalWithdrawal &&
           state.randomNum >= userDepositObj[0] &&
           state.randomNum <= userDepositObj[1] &&
           !isBeforeDeadline());
 
-        transfer(balance() - state.totalDeposit).to(this);
+        transfer(balance() - (state.totalDeposit - state.totalWithdrawal)).to(
+          this
+        );
 
         returnF(null);
 
         return state;
       }
     )
-    .api(UserAPI.clearSupplyAmtToDefi, (returnF) => {
-      returnF(state.supplyAmtToDefi);
-      return { ...state, supplyAmtToDefi: 0 };
-    });
+    .api(
+      UserAPI.clearSupplyAmtToDefi,
+      () => assume(this == PoolCreator, "You are not the lottery creator"),
+      () => 0,
+      (returnF) => {
+        require(this == PoolCreator);
+        returnF(state.supplyAmtToDefi);
+        return { ...state, supplyAmtToDefi: 0 };
+      }
+    )
+    .api(
+      UserAPI.setBankASAbal,
+      (newBankASAbal) =>
+        assume(this == PoolCreator, "You are not the lottery creator"),
+      (newBankASAbal) => 0,
+      (newBankASAbal, returnF) => {
+        require(this == PoolCreator);
+        returnF(null);
+        return { ...state, maxBankASAbal: newBankASAbal };
+      }
+    );
 
   commit();
   exit();

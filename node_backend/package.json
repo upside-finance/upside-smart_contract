@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "@reach-sh/stdlib": "^0.1.10-rc.6",
-    "dotenv": "^16.0.1"
+    "dotenv": "^16.0.1",
+    "node-cron": "3.0.0"
   }
 }
