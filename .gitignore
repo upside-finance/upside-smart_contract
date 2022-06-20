@@ -4,5 +4,4 @@ reach_sc/reach
 reach_sc/.reach
 node_backend/node_modules/
 .env
-node_backend/appID.txt
 python_script/__pycache__
