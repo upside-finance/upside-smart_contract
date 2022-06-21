@@ -33,7 +33,7 @@ const script = async () => {
 
     if (onLiveChain() && supplyAmt !== 0) {
       const pythonSpawn = spawnSync(
-        `conda run -n UF_algofi python ../python_script/algofi_mint.py ${supplyAmt}`,
+        `python ../python_script/algofi_mint.py ${supplyAmt}`,
         { shell: true }
       );
 
@@ -69,7 +69,7 @@ const script = async () => {
 
       if (onLiveChain() && bASAbal != 0) {
         const pythonSpawn = spawnSync(
-          `conda run -n UF_algofi python ../python_script/algofi_burn.py`,
+          `python ../python_script/algofi_burn.py`,
           { shell: true }
         );
 
