@@ -49,7 +49,9 @@ const script = async () => {
       await backendAcc.balanceOf(process.env.bASAid)
     ).toNumber();
 
-    const maxBankASAbal = await ctc.unsafeViews.UserView.maxBankASAbal();
+    const maxBankASAbal = (
+      await ctc.unsafeViews.UserView.maxBankASAbal()
+    ).toNumber();
 
     await ctc.apis.UserAPI.setBankASAbal(
       maxBankASAbal + newBankASAbal - oldBankASAbal
