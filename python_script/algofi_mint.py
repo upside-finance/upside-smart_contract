@@ -1,16 +1,9 @@
 # This sample is provided for demonstration purposes only.
 # It is not intended for production use.
 # This example does not constitute trading advice.
-import os
 from dotenv import dotenv_values
-from algosdk import mnemonic, account
+from algosdk import mnemonic
 from algofi.v1.client import AlgofiTestnetClient, AlgofiMainnetClient
-from algofi.utils import (
-    get_ordered_symbols,
-    prepare_payment_transaction,
-    get_new_account,
-)
-
 from example_utils import print_market_state, print_user_state
 import sys
 
@@ -70,3 +63,4 @@ print_market_state(client.get_market(symbol))
 print_user_state(client, symbol, sender)
 
 sys.stdout.flush()
+sys.stderr.flush()

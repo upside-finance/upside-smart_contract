@@ -13,94 +13,156 @@ const script = async () => {
   const networkSecsPromise = reach.getNetworkSecs();
   const deadlineSecsPromise = ctc.unsafeViews.UserView.deadlineSecs();
 
-  const [networkSecs, deadlineSecs] = (
-    await Promise.all([networkSecsPromise, deadlineSecsPromise])
-  ).map((res) => res.toNumber());
+  const [networkSecs, deadlineSecs] = await Promise.all([
+    networkSecsPromise,
+    deadlineSecsPromise,
+  ]).then((res) => res.map((v) => v.toNumber()));
 
   console.log("Network time: " + networkSecs);
   console.log("Lottery deadline: " + deadlineSecs);
 
   if (networkSecs < deadlineSecs) {
-    const supplyAmt = (
-      await ctc.apis.UserAPI.clearSupplyAmtToDefi()
-    ).toNumber();
+    console.log("Within lottery period");
 
-    console.log("Amount to be supplied to Algofi = " + supplyAmt);
+    const supplyAmt = await ctc.unsafeViews.UserView.supplyAmtToDefi().then(
+      (v) => v.toNumber()
+    );
 
-    const oldBankASAbal = (
-      await backendAcc.balanceOf(process.env.bASAid)
-    ).toNumber();
+    console.log("Amount to be supplied to DeFi = " + supplyAmt);
 
-    if (onLiveChain() && supplyAmt !== 0) {
+    if (supplyAmt == 0) {
+      return;
+    }
+
+    console.log(`Supplying ${supplyAmt} to DeFi...`);
+
+    const oldBankASAbal = await backendAcc
+      .balanceOf(process.env.bASAid)
+      .then((v) => v.toNumber());
+
+    if (onLiveChain()) {
       const pythonSpawn = spawnSync(
         `python ../python_script/algofi_mint.py ${supplyAmt}`,
         { shell: true }
       );
 
-      if (pythonSpawn.stdout) {
-        console.log(pythonSpawn.stdout.toString());
-      }
       if (pythonSpawn.stderr) {
         console.log(pythonSpawn.stderr.toString());
+        return;
+      } else {
+        console.log(pythonSpawn.stdout.toString());
       }
     }
 
-    const newBankASAbal = (
-      await backendAcc.balanceOf(process.env.bASAid)
-    ).toNumber();
+    const clearSupplyAmtToDefiPromise = ctc.apis.UserAPI.clearSupplyAmtToDefi(
+      supplyAmt
+    );
 
-    const maxBankASAbal = (
-      await ctc.unsafeViews.UserView.maxBankASAbal()
-    ).toNumber();
+    const newBankASAbalPromise = backendAcc
+      .balanceOf(process.env.bASAid)
+      .then((v) => v.toNumber());
 
-    await ctc.apis.UserAPI.setBankASAbal(
-      maxBankASAbal + newBankASAbal - oldBankASAbal
+    const maxBankASAbalPromise = ctc.unsafeViews.UserView.maxBankASAbal().then(
+      (v) => v.toNumber()
+    );
+
+    const [_, newBankASAbal, maxBankASAbal] = await Promise.all([
+      clearSupplyAmtToDefiPromise,
+      newBankASAbalPromise,
+      maxBankASAbalPromise,
+    ]);
+
+    const newMaxBankASAbal = maxBankASAbal + newBankASAbal - oldBankASAbal;
+    await ctc.apis.UserAPI.setBankASAbal(newMaxBankASAbal);
+
+    console.log("Old bASA balance in wallet = " + oldBankASAbal);
+    console.log("New bASA balance in wallet = " + newBankASAbal);
+    console.log(
+      "Increase in bASA balance in wallet = " + (newBankASAbal - oldBankASAbal)
+    );
+
+    console.log("Old stated bASA balance in SC = " + maxBankASAbal);
+    console.log("New stated bASA balance in SC = " + newMaxBankASAbal);
+    console.log(
+      "Increase in stated bASA balance in SC = " +
+        (newMaxBankASAbal - maxBankASAbal)
     );
   } else {
+    console.log("Past lottery period");
+
     const requestReclaim = await ctc.unsafeViews.UserView.requestReclaim();
 
-    if (requestReclaim) {
-      const oldBal = (await backendAcc.balanceOf()).toNumber();
-      const totalDeposit = (
-        await ctc.unsafeViews.UserView.totalDeposit()
-      ).toNumber();
-
-      const bASAbal = (
-        await backendAcc.balanceOf(process.env.bASAid)
-      ).toNumber();
-
-      if (onLiveChain() && bASAbal != 0) {
-        const pythonSpawn = spawnSync(
-          `python ../python_script/algofi_burn.py`,
-          { shell: true }
-        );
-
-        if (pythonSpawn.stdout) {
-          console.log(pythonSpawn.stdout.toString());
-        }
-        if (pythonSpawn.stderr) {
-          console.log(pythonSpawn.stderr.toString());
-        }
-      }
-
-      const newBal = (await backendAcc.balanceOf()).toNumber();
-      const supplyAmt = (
-        await ctc.apis.UserAPI.clearSupplyAmtToDefi()
-      ).toNumber();
-
-      const reclaimedAmt = Math.max(newBal - oldBal + supplyAmt, totalDeposit);
-
-      const currProbArrSize = (
-        await ctc.unsafeViews.UserView.currProbArrSize()
-      ).toNumber();
-      console.log("Probability array size = " + currProbArrSize);
-
-      const rn = Math.floor(Math.random() * (currProbArrSize + 1));
-
-      await ctc.apis.UserAPI.transferFunds(rn, reclaimedAmt);
-      console.log("Supplied random number = " + rn);
-      console.log(`Transferred ${reclaimedAmt} from Algofi to smart contract`);
+    if (!requestReclaim) {
+      console.log(
+        "Funds already reclaimed from DeFi and supplied to smart contract"
+      );
+      return;
     }
+
+    console.log(
+      "Reclaiming funds from DeFi and supplying to smart contract..."
+    );
+
+    const maxBankASAbalPromise = ctc.unsafeViews.UserView.maxBankASAbal();
+    const oldBalPromise = backendAcc.balanceOf();
+    const supplyAmtPromise = ctc.unsafeViews.UserView.supplyAmtToDefi();
+    const totalDepositPromise = ctc.unsafeViews.UserView.totalDeposit();
+    const currProbArrSizePromise = ctc.unsafeViews.UserView.currProbArrSize();
+
+    const [
+      maxBankASAbal,
+      oldBal,
+      supplyAmt,
+      totalDeposit,
+      currProbArrSize,
+    ] = await Promise.all([
+      maxBankASAbalPromise,
+      oldBalPromise,
+      supplyAmtPromise,
+      totalDepositPromise,
+      currProbArrSizePromise,
+    ]).then((res) => res.map((v) => v.toNumber()));
+
+    if (onLiveChain() && maxBankASAbal != 0) {
+      console.log(`Burning ${maxBankASAbal} bASA...`);
+
+      const pythonSpawn = spawnSync(
+        `python ../python_script/algofi_burn.py ${maxBankASAbal}`,
+        {
+          shell: true,
+        }
+      );
+
+      if (pythonSpawn.stderr) {
+        console.log(pythonSpawn.stderr.toString());
+        return;
+      } else if (pythonSpawn.stdout) {
+        console.log(pythonSpawn.stdout.toString());
+      }
+    }
+
+    const newBal = await backendAcc.balanceOf().then((v) => v.toNumber());
+    const calculatedReclaimAmt = newBal - oldBal + supplyAmt;
+    const reclaimedAmt = Math.max(calculatedReclaimAmt, totalDeposit);
+    console.log("Old underlying balance: " + oldBal);
+    console.log("New underlying balance: " + newBal);
+    console.log("Increase in underlying balance: " + (newBal - oldBal));
+    console.log("Deposits not supplied to DeFi: " + supplyAmt);
+    console.log("Total deposits: " + totalDeposit);
+    console.log(
+      "Amount calculated to be transfered to smart contract: " +
+        calculatedReclaimAmt
+    );
+    console.log(
+      "Amount actual to be transfered to smart contract: " + reclaimedAmt
+    );
+
+    console.log("Probability array size = " + currProbArrSize);
+    const rn = Math.floor(Math.random() * (currProbArrSize + 1));
+
+    await ctc.apis.UserAPI.transferFunds(rn, reclaimedAmt);
+    console.log("Supplied random number: " + rn);
+    console.log(`Transferred ${reclaimedAmt} from wallet to smart contract`);
   }
 };
 
@@ -118,7 +180,7 @@ const appID = await fs.readFile(process.env.appID_filename, {
 const backendAcc = await reach.newAccountFromMnemonic(process.env.mnemonic);
 const ctc = backendAcc.contract(backend, appID);
 
-cron.schedule("*/5 * * * *", () => {
+cron.schedule("*/1 * * * *", () => {
   console.log(new Date().toLocaleString());
   script(reach);
 });
