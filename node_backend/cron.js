@@ -49,7 +49,7 @@ const script = async () => {
       if (pythonSpawn.stderr) {
         console.log(pythonSpawn.stderr.toString());
         return;
-      } else {
+      } else if (pythonSpawn.stdout) {
         console.log(pythonSpawn.stdout.toString());
       }
     }
