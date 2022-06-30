@@ -15,7 +15,7 @@ export const main = Reach.App(() => {
     withdraw: Fun([], Null),
     transferFunds: Fun([UInt, UInt], Null),
     claimReward: Fun([], Null),
-    clearSupplyAmtToDefi: Fun([], UInt),
+    clearSupplyAmtToDefi: Fun([UInt], Null),
     setBankASAbal: Fun([UInt], Null),
   });
 
@@ -30,6 +30,8 @@ export const main = Reach.App(() => {
     requestReclaim: Bool,
     supplyAmtToDefi: UInt,
     maxBankASAbal: UInt,
+    actualPrizePool: UInt,
+    getUserDeposit: Fun([Address], UInt),
   });
 
   init();
@@ -49,6 +51,14 @@ export const main = Reach.App(() => {
   const depositors = new Map(Array(UInt, 3));
   const nullDepositObj = array(UInt, [0, 0, 0]);
 
+  UserView.getUserDeposit.set((u) =>
+    fromMaybe(
+      depositors[u],
+      () => 0,
+      (v) => v[2]
+    )
+  );
+
   const state = parallelReduce({
     totalDeposit: 0,
     totalWithdrawal: 0,
@@ -59,6 +69,7 @@ export const main = Reach.App(() => {
     randomNum: 0,
     supplyAmtToDefi: 0,
     maxBankASAbal: 0,
+    actualPrizePool: 0,
   })
     .invariant(true)
     .define(() => {
@@ -70,6 +81,7 @@ export const main = Reach.App(() => {
       UserView.requestReclaim.set(state.requestReclaim);
       UserView.supplyAmtToDefi.set(state.supplyAmtToDefi);
       UserView.maxBankASAbal.set(state.maxBankASAbal);
+      UserView.actualPrizePool.set(state.actualPrizePool);
     })
     .while(true)
     .api(
@@ -142,15 +154,25 @@ export const main = Reach.App(() => {
       (supplied_rn, amt) => {
         assume(this == PoolCreator, "You are not the lottery creator");
         assume(state.requestReclaim, "Funds already transferred");
+        assume(
+          amt >= state.totalDeposit,
+          "Amount reclaimed from DeFi must be greater than deposits"
+        );
       },
       (supplied_rn, amt) => amt,
       (supplied_rn, amt, returnF) => {
         require(this == PoolCreator &&
           state.requestReclaim &&
+          amt >= state.totalDeposit &&
           !isBeforeDeadline());
         returnF(null);
 
-        return { ...state, requestReclaim: false, randomNum: supplied_rn };
+        return {
+          ...state,
+          requestReclaim: false,
+          randomNum: supplied_rn,
+          actualPrizePool: amt - state.totalDeposit,
+        };
       }
     )
     .api(
@@ -164,7 +186,7 @@ export const main = Reach.App(() => {
           "You did not win the lottery"
         );
         assume(
-          balance() > state.totalDeposit - state.totalWithdrawal,
+          balance() >= state.actualPrizePool,
           "Contract does not have enough funds to dispense"
         );
       },
@@ -172,14 +194,12 @@ export const main = Reach.App(() => {
       (returnF) => {
         const userDepositObj = fromSome(depositors[this], nullDepositObj);
         require(!state.requestReclaim &&
-          balance() > state.totalDeposit - state.totalWithdrawal &&
+          balance() >= state.actualPrizePool &&
           state.randomNum >= userDepositObj[0] &&
           state.randomNum <= userDepositObj[1] &&
           !isBeforeDeadline());
 
-        transfer(balance() - (state.totalDeposit - state.totalWithdrawal)).to(
-          this
-        );
+        transfer(state.actualPrizePool).to(this);
 
         returnF(null);
 
@@ -188,12 +208,12 @@ export const main = Reach.App(() => {
     )
     .api(
       UserAPI.clearSupplyAmtToDefi,
-      () => assume(this == PoolCreator, "You are not the lottery creator"),
-      () => 0,
-      (returnF) => {
+      (amt) => assume(this == PoolCreator, "You are not the lottery creator"),
+      (amt) => 0,
+      (amt, returnF) => {
         require(this == PoolCreator);
-        returnF(state.supplyAmtToDefi);
-        return { ...state, supplyAmtToDefi: 0 };
+        returnF(null);
+        return { ...state, supplyAmtToDefi: state.supplyAmtToDefi - amt };
       }
     )
     .api(
