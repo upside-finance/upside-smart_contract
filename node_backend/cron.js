@@ -46,7 +46,7 @@ const script = async () => {
         { shell: true }
       );
 
-      if (pythonSpawn.stderr) {
+      if (pythonSpawn.stderr && pythonSpawn.stderr.toString() !== "") {
         console.log(pythonSpawn.stderr.toString());
         return;
       } else if (pythonSpawn.stdout) {
@@ -133,7 +133,7 @@ const script = async () => {
         }
       );
 
-      if (pythonSpawn.stderr) {
+      if (pythonSpawn.stderr && pythonSpawn.stderr.toString() !== "") {
         console.log(pythonSpawn.stderr.toString());
         return;
       } else if (pythonSpawn.stdout) {
@@ -180,7 +180,12 @@ const appID = await fs.readFile(process.env.appID_filename, {
 const backendAcc = await reach.newAccountFromMnemonic(process.env.mnemonic);
 const ctc = backendAcc.contract(backend, appID);
 
+let running = false;
+
 cron.schedule("*/1 * * * *", () => {
-  console.log(new Date().toLocaleString());
-  script(reach);
+  if (!running) {
+    running = true;
+    console.log(new Date().toLocaleString());
+    script(reach).then((_) => (running = false));
+  }
 });
