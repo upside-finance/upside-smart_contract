@@ -32,6 +32,9 @@ export const main = Reach.App(() => {
     maxBankASAbal: UInt,
     actualPrizePool: UInt,
     getUserDeposit: Fun([Address], UInt),
+    getProbIndex: Fun([Address], Array(UInt, 2)),
+    randomNum: UInt,
+    winningUser: Address,
   });
 
   init();
@@ -58,6 +61,13 @@ export const main = Reach.App(() => {
       (v) => v[2]
     )
   );
+  UserView.getProbIndex.set((u) =>
+    fromMaybe(
+      depositors[u],
+      () => array(UInt, [0, 0]),
+      (v) => array(UInt, [v[0], v[1]])
+    )
+  );
 
   const state = parallelReduce({
     totalDeposit: 0,
@@ -70,6 +80,7 @@ export const main = Reach.App(() => {
     supplyAmtToDefi: 0,
     maxBankASAbal: 0,
     actualPrizePool: 0,
+    winningUser: PoolCreator,
   })
     .invariant(true)
     .define(() => {
@@ -82,6 +93,8 @@ export const main = Reach.App(() => {
       UserView.supplyAmtToDefi.set(state.supplyAmtToDefi);
       UserView.maxBankASAbal.set(state.maxBankASAbal);
       UserView.actualPrizePool.set(state.actualPrizePool);
+      UserView.randomNum.set(state.randomNum);
+      UserView.winningUser.set(state.winningUser);
     })
     .while(true)
     .api(
@@ -203,7 +216,7 @@ export const main = Reach.App(() => {
 
         returnF(null);
 
-        return state;
+        return { ...state, winningUser: this };
       }
     )
     .api(
